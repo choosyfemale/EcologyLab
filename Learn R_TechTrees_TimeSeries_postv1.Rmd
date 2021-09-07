@@ -1,0 +1,405 @@
+---
+title: "Tutorial"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(ggplot2)
+library(dplyr)
+library(mgcv) 
+library(lmtest)
+library(effects)
+library(nlme) 
+knitr::opts_chunk$set(echo = FALSE)
+tech_trees <- read.csv(url("https://raw.githubusercontent.com/naltmank/LearnR-with-Tech-Trees/main/TECH_all%20trees.csv"))
+tech_trees$TOTHT_m <- tech_trees$TOTHT_ft*0.305
+tech_trees$CanopyRadius_m <- tech_trees$CanopyRadius_ft*0.305
+active_trees <- tech_trees[tech_trees$TreeStatus != "Removed" , ]
+phenology <- read.csv(url("https://raw.githubusercontent.com/naltmank/LearnR-with-Tech-Trees/main/Tree%20Data%20Master%20Sheet_CLEAN%20v2.csv"), stringsAsFactors=T)
+phenology$Date <- as.Date(phenology$Date) # This formats the date as year-month-day or format = "%Y-%m-%d"
+
+phenology$jDate <- format(phenology$Date, "%Y-%j") 
+phenology$Year <- format(phenology$Date, "%Y") # Make a year column
+phenology$Month <- format(phenology$Date, "%m") # Make a month column
+phenology$jDay <- format(phenology$Date, "%j") # Make a jDay column
+phenology <- phenology[phenology$Year != "2020", ]
+MoHick <- subset(phenology, Common.Name == "Mockernut Hickory")
+
+MoHick$Canopy.Cover.Midpt <- case_when(              
+                  MoHick$Canopy.Cover == "0" ~ 0 / 2,   
+                  MoHick$Canopy.Cover == "<5%" ~ 5 / 2,
+                  MoHick$Canopy.Cover == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Canopy.Cover == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Canopy.Cover == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Canopy.Cover == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Canopy.Cover == "95% or more" ~ (95 + 100) / 2
+                  )
+
+# Let's make it explicitly clear to R that the data in new column should be considered numbers
+MoHick$Canopy.Cover.Midpt <- as.numeric(MoHick$Canopy.Cover.Midpt)
+
+# To use the dates in statistical models we need R to view the dates as numbers so lets go ahead and specify that now 
+MoHick$Month <- as.numeric(MoHick$Month)
+MoHick$jDay <- as.numeric(MoHick$jDay)
+MoHick$Year <- as.numeric(MoHick$Year)
+
+MoHick$Colored.Leaves.Midpt <- case_when(
+                  MoHick$Colored.Leaves == NA ~ 0,
+                  MoHick$Colored.Leaves == "<5%" ~ 5 / 2,
+                  MoHick$Colored.Leaves == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Colored.Leaves == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Colored.Leaves == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Colored.Leaves == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Colored.Leaves == "95% or more" ~ (95 + 100) / 2
+                  )
+
+
+MoHick$Lost.Leaves.Midpt <- case_when(
+                  MoHick$Lost.Leaves == "<5%" ~ 5 / 2,
+                  MoHick$Lost.Leaves == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Lost.Leaves == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Lost.Leaves == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Lost.Leaves == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Lost.Leaves == "95% or more" ~ (95 + 100) / 2
+                  )
+
+RemoveDups <- function(df, column) {
+  inds = sample(1:nrow(df))  
+  df   = df[inds, ]
+
+  dups = duplicated(df[, column])
+  df   = df[!dups, ]
+  inds = inds[!dups]
+
+  df[sort(inds, index=T)$ix, ]
+}
+
+
+# Turn jDate into a numeric by removing the hyphen:
+MoHick$jDate_numeric <- as.numeric(gsub('-', "", MoHick$jDate))  
+
+# Create a new dataset with dups removed
+MoHick_nodups = RemoveDups(MoHick, column = "jDate_numeric")
+
+MoHick2019 <- MoHick[MoHick$Year == 2019 ,]
+
+# Period = 365 days
+# Wavenumber of sine function = 2 * pi/period 
+
+# Create a sine-model function
+sine_model <- function(x, amplitude, period, phase, offset) {
+  return(amplitude*sin(2*pi/period*x + phase) + offset)
+}
+
+
+mod.gam <- gam(Canopy.Cover.Midpt ~ s(jDay), data = MoHick)
+
+A <- 50 # Phenophase intensity values go between 0 and 100
+offset <- 50 # Add 50 to make min 0 and max 100
+period <- 365 # Number of days in a year
+phase <- 0.5 # This is a guess
+
+guess_curve <- sine_model(MoHick$jDay, A, period, phase, offset)
+
+b_vals <- seq(0.1, 10, by = 0.01)
+
+# Use the Base R function 'sapply' to loop over b_vals list
+resids_sq <- sapply(b_vals, function(b) {
+    prediction <- 50*sin(2*pi/365*MoHick2019$jDay + b) + 50 # The function to loop b values over
+    residuals <- prediction - MoHick2019$Canopy.Cover.Midpt # Calculate the residuals, or error between the prediction & actual data
+    sum(residuals^2) # Calculate the sum of residuals squared
+})
+
+best_fit <- which(resids_sq == min(resids_sq)) # Specify that the best fit is when the residual squares are smallest
+b_fit <- b_vals[best_fit] # Find and save the b value that is the best fit as b_fit
+b_fit #Let's check what the best fitting b value was
+
+```
+
+
+## Analyzing trends in tree phenology 
+
+For statistical analyses with time series data, it's often helpful to work with NUMERIC data. Because it is hard to get exact measurements for things like leaf cover, etc. without specialized tools (and lots of time), all of our data was collected using cover classes and other similar *categories.* Using categories for numerical data is especially helpful when you have multiple people collecting data because each person might view the situation a bit differently - one person's 90% canopy cover could be another person's 85%. Thus, you'll often find that data that *could* be collected as numerical data is instead collected as *class* data (e.g. cover classes, size classes, abundance classes, etc.). This means the data is all technically *categorical* data, even though each category represents an estimation of numerical data!
+
+While categorical/class data is useful for minimizing *bias* in data collection, it can make performing analyses more difficult. As such, we will need to use R to convert our categorical data to numerical data. Oftentimes the safest assumption is to use the midpoint, the sort of average, of the category when converting it to a number. Take a second to think of how you would calculate the midpoint for a span of numbers.
+
+Now to convert our categories to the midpoint numerical values we need to tell R that *if* it encounters a category then it needs to calculate the midpoint. We will need to define the calculation for the midpoint for each category individually.To do this we are going to use a special if_else function, or logic function, called case_when() which allows us make multiple if statements at once. Now let's try creating a new column where the categories of Canopy cover are numeric data:
+
+```{r converting-cateories-into-numeric-data, exercise = TRUE}
+
+levels(MoHick$Canopy.Cover) # Let's remind ourselves what categories are in in the Canopy cover column
+# Note: To use case_when, we first write out the condition (Canopy.Cover IS EQUAL TO (==) "category name") followed by a `~` and the corresponding operation for that condition (ie the calculation for the midpoint)
+# We're going to use a function from a package called "dplyr" called case_when() for this
+# We've already loaded in dplyr for this LearnR module, but if you want to use this on your own
+# don't forget to load it with library()
+MoHick$Canopy.Cover.Midpt <- case_when(              
+                  MoHick$Canopy.Cover == "0" ~ 0 / 2,   
+                  MoHick$Canopy.Cover == "<5%" ~ 5 / 2,
+                  MoHick$Canopy.Cover == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Canopy.Cover == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Canopy.Cover == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Canopy.Cover == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Canopy.Cover == "95% or more" ~ (95 + 100) / 2
+                  )
+
+# Let's make it explicitly clear to R that the data in new column should be considered numbers
+MoHick$Canopy.Cover.Midpt <- as.numeric(MoHick$Canopy.Cover.Midpt)
+
+# To use the dates in statistical models we need R to view the dates as numbers so lets go ahead and specify that now 
+MoHick$Month <- as.numeric(MoHick$Month)
+MoHick$jDay <- as.numeric(MoHick$jDay)
+MoHick$Year <- as.numeric(MoHick$Year)
+
+# Let's double check the structure to make sure everything converted properly
+str(MoHick)
+```
+Now let's try converting the categories for other data we collected. For the Colored leaves data we will provide the code and you should add in comments with what each line of code does. Then for the Lost leaves data try writing the code on your own. 
+
+```{r converting-the-other-data, exercise = TRUE}
+# Add in comments with what each line of code does so your fellow students understand your code
+
+levels(MoHick$Colored.Leaves)
+
+MoHick$Colored.Leaves.Midpt <- case_when(
+                  MoHick$Colored.Leaves == NA ~ 0,
+                  MoHick$Colored.Leaves == "<5%" ~ 5 / 2,
+                  MoHick$Colored.Leaves == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Colored.Leaves == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Colored.Leaves == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Colored.Leaves == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Colored.Leaves == "95% or more" ~ (95 + 100) / 2
+                  )
+
+str(MoHick)
+# Now try converting the Lost Leaves (lost.Leaves) data on your own
+# Create a new column in the MoHick dataframe called Lost.Leaves.Midpt:
+
+
+
+
+```
+
+```{r converting-the-other-data-answer, results='hide'}
+# Add in comments with what each line of code does so your fellow students understand your code
+
+levels(MoHick$Colored.Leaves)
+
+MoHick$Colored.Leaves.Midpt <- case_when(
+                  MoHick$Colored.Leaves == NA ~ 0,
+                  MoHick$Colored.Leaves == "<5%" ~ 5 / 2,
+                  MoHick$Colored.Leaves == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Colored.Leaves == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Colored.Leaves == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Colored.Leaves == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Colored.Leaves == "95% or more" ~ (95 + 100) / 2
+                  )
+
+str(MoHick)
+# Now try converting the Lost Leaves (lost.Leaves) data on your own
+
+# Example using Lost.Leaves - DELETE FROM FINAL PRODUCT
+# levels(MoHick$Lost.Leaves)
+# 
+MoHick$Lost.Leaves.Midpt <- case_when(
+                  MoHick$Lost.Leaves == "<5%" ~ 5 / 2,
+                  MoHick$Lost.Leaves == "5%-24%" ~ (5 + 24) / 2,
+                  MoHick$Lost.Leaves == "25%-49%" ~ (25 + 49) / 2,
+                  MoHick$Lost.Leaves == "50%-74%" ~ (50 + 74) / 2,
+                  MoHick$Lost.Leaves == "75%-94%" ~ (75 + 94) / 2,
+                  MoHick$Lost.Leaves == "95% or more" ~ (95 + 100) / 2
+                  )
+
+str(MoHick)
+
+```
+
+
+## Examining canopy cover change over time with GAMs
+
+Based on our earlier plots, we know that we're dealing with nonlinear data. One of the many techniques we can use to analyze this kind of data is with a Generalized Additive Model, or GAM. GAMs essentially allow us to visualize a best fit relationship using nonlinear data predictors and how 'smoothly' they show a distribution. A common package for running GAMs is a package called "mgcv," which we've already loaded into this LearnR package. Let's try it out below:
+
+```{r gam, exercise = TRUE}
+
+mod.gam <- gam(Canopy.Cover.Midpt ~ s(jDay), data = MoHick) # Fit a smoother that plots how canopy cover changes by day
+# In simplest terms, it's saying:
+# "what's the best shape of a line that describes the relationship between day and canopy cover?"
+summary(mod.gam) # Model summary 
+```
+From the "approximate significance of smooth terms" section of the summary, we know that the smoother (jDay) explains a significant amount of the variance in the data (yay!), but under the "edf" section we see that the smoother approximates a function with ~9 terms in it. This is quite a lot, and may become problematic if you were to take this forward with some more complicated analyses. If we plot the data, we can start to understand why that is:
+
+
+```{r gam-plot, exercise = TRUE, exercise.setup = "gam"}
+# Run these next two lines of code together
+# The shift term specifies that we want it to plot according to the initial scale of the data - not the residuals
+plot(mod.gam, shift = coef(mod.gam)[1]) 
+points(Canopy.Cover.Midpt ~ jDay, data = MoHick) # Add the original datapoints back to the graph
+
+```
+As you can see, the model is predicting that we may hit over 100% canopy cover, largely due to the lack of data during the summer months when school is let out - the smoother is essentially just guessing what will happen during those months based on trends in the data in the final spring weeks of data collection and the first weeks of data collection in the fall.
+
+One thing you might have noticed above is that we went back to plotting in base R instead of using ggplot. This is because plotting model results in ggplot (while ABSOLUTELY preferable for publications and just generally making things look nice) involve a few extra steps that aren't necessarily worth getting into here when we just want to get a quick idea of our data. Consider testing yourself on how you would plot the above model in ggplot on your own!
+
+
+## Accounting for temporal autocorrelation 
+
+Probably something you've heard countless times before is to be careful of "correlation vs. causation." This absolutely applies to time series data as well, where oftentimes measurements that are collected over the same time periods are correlated with each other. In these cases, you might ask - can one time series be used to predict another time series? That is, do two datasets follow the same pattern predictably over time? Lucky for us, you can! One of the most common tests for this is called the granger test for causality, which essentially says "okay, can the measurement at this timepoint of variable X be used to predict the next timepoint of variable Y?" Let's try out a granger test (using a function from the package "lmtest") to see if two variables we think MIGHT be correlated (here, lost leaves and colored leaves) can be used to predict one another:
+
+```{r granger-test, exercise = TRUE}
+
+grangertest(Lost.Leaves.Midpt ~ Colored.Leaves.Midpt, order=1, data=MoHick) # This is essentially asking do colored leaves predict or correlate linearly (order = 1) with leaf loss in Mockernut Hickory trees?
+```
+
+So we see that colored leaves is a poor predictor of lost leaves in this case. No biggie! If we plot this out, we can see why:
+
+```{r simple-plot, exercise = TRUE}
+# Simple plot
+plot(Lost.Leaves.Midpt ~ Colored.Leaves.Midpt, data=MoHick)
+# 
+```
+
+Even from this simple plot you can see that there's no strong relationship between these two factors.
+
+Despite this particular example, oftentimes you *can* use a variable to predict the measurement at the next timepoint of another variable. However, sometimes this is actually more harmful than you might think - one of the challenges with working with time series data is that you often have to contend with *temporal autocorrelation.* That is, measurements at timepoint x+1 depend, at least somewhat, on measurements taken at timepoint X. Essentially, this means that two data points that were collected closer in time to each other will be more similar to each other. For our purposes, this means that datapoints that were collected on consecutive weeks will be more similar to each other than, say, datapoints that were collected months apart. By accounting for temporal autocorrelation, you can more accurately test trends in your data.
+
+
+A common method for accounting for temporal autocorrelation is using generalized least squares (gls) model. This requires us to remove duplicate data (i.e. multiple measurements from the same tree on a given day), which may or may not be ideal, depending on your experimental design:
+
+```{r remove-dupes-fxn, exercise = TRUE}
+
+# Let's construct a function for removing duplicate. Luckily someone already posted code for this function on Stackoverflow that we can borrow. Make sure to include the source of borrowed code so we can cite it later.
+# Code taken from: https://stackoverflow.com/questions/8041720/randomly-select-on-data-frame-for-unique-rows
+
+RemoveDups <- function(df, column) {
+  inds = sample(1:nrow(df))  
+  df   = df[inds, ]
+
+  dups = duplicated(df[, column])
+  df   = df[!dups, ]
+  inds = inds[!dups]
+
+  df[sort(inds, index=T)$ix, ]
+}
+```
+
+Given that we may have sampled on the same days across different years, the full Julian date (including month, date, and year) will be a more useful tool to account for temporal autocorrelation:
+
+```{r remove-duplicate-jDate, exercise = TRUE}
+# Turn jDate into a numeric by removing the hyphen:
+MoHick$jDate_numeric <- as.numeric(gsub('-', "", MoHick$jDate))  
+
+# Create a new dataset with dups removed
+MoHick_nodups = RemoveDups(MoHick, column = "jDate_numeric")
+
+```
+
+From here, we can start to test various factors out on our data to see which are significant predictors given temporal autocorrelation, but first, a quick demonstration for why this matters.
+
+Let's say you're interested to see if mean canopy cover changed depending on the year of study. One way to examine this would be to use a simple generalized linear model (glm):
+
+```{r glm-example, exercise = TRUE}
+
+glm.mod <- glm(Canopy.Cover.Midpt ~ Year, data = MoHick_nodups) # glm where Canopy cover is a function of year
+summary(glm.mod) # Check for significance
+plot(allEffects(glm.mod)) # Plot the model effects (using allEffects() from the "effects" pckg)
+```
+
+So we see that mean canopy cover decreased over time, and that this effect was just barely non-significant. However, when we take temporal autocorrelation into account using generalized least squares (gls() - from the package "nlme") model:
+
+```{r phenology-gls, exercise = TRUE}
+
+# The correlation function is essentially just specifying which column we're using to account for temporal autocorrelation: 
+mod.gls <- gls(Canopy.Cover.Midpt ~ Year, data = MoHick_nodups, correlation = corCAR1(form =~ jDate_numeric))
+
+# Check for significance
+summary(mod.gls)
+
+# Plot model effects
+plot(allEffects(mod.gls))
+
+```
+We see that there's almost no difference between the years at all! 
+
+Using this set-up/framework, what other relationships could you examine in our dataset?
+
+```{r gls_playtime, exercise = TRUE}
+
+```
+
+## Fit an oscillatory model to the data
+Many seasonal phenomena oscillate, as it is expected that certain characteristics, like leaf color, vary across the year (hence the term *fall* leaf colors-- it's a predictable change in this characteristic that occurs on a regular cycle). Many seasonal phenomena such as phenophase intensities can be fit to a sine wave. A generic sine wave has four parameters:
+
+$$y = A \text{sin}(kx - b) + c$$
+where $k = 2\pi / T$, $T$ is the period or length of time between peaks, 
+$A$ is the amplitude, $b$ is the phase, and $c$ is the vertical shift or offset. 
+
+Let's plot a generic sine curve to remind ourselves what a sine wave looks like before trying to fit our data:
+```{r sine-wave, exercise = TRUE}
+# Plot a sine wave
+x <- seq(0, 3, 0.01)
+A <- 1
+k <- 2*pi
+b <- 0.5
+c <- 0
+
+plot(x, A*sin(k*x-b)+c) +
+  geom_line()
+```
+
+Now lets create a test sine function and use a subset of our data to get a rough idea of what parameters we should use.
+
+```{r fit-sine-model, exercise = TRUE}
+# Let's use a data frame with only 1 year of data to simplify things to start
+MoHick2019 <- MoHick[MoHick$Year == 2019 ,]
+
+# Period = 365 days
+# Wavenumber of sine function = 2 * pi/period 
+
+# Create a sine-model function
+sine_model <- function(x, amplitude, period, phase, offset) {
+  return(amplitude*sin(2*pi/period*x + phase) + offset)
+}
+
+A <- 50 # Phenophase intensity values go between 0 and 100
+offset <- 50 # Add 50 to make min 0 and max 100
+period <- 365 # Number of days in a year
+phase <- 0.5 # This is a guess
+
+guess_curve <- sine_model(MoHick$jDay, A, period, phase, offset)
+
+plot(x = MoHick$jDay, y = guess_curve, col = "blue") # Guess data
+points(x = MoHick2019$jDay, y = MoHick2019$Canopy.Cover.Midpt, col = "red") # Actual data
+       
+```
+Since the minimum and maximum intensity for a phenophase are 0 and 100% by definition, this sets both $c$ and $A$ as boundary values between which the curve will oscillate. Additionally, since there are 365 days in a year (most years) and the oscillation of canopy cover should happen once per year this means we know $k$. Therefore, we only need to work on fitting $b$, the horizontal shift or phase. 
+
+If we want to be more exact in our fitting, we would want to take into account things like temperature and the extra day included in leap years. As another advantage of using R, there are specific packages in R, like the `pheno` package, built specifically for plotting and analyzing phenological data. For our simple example, we'll forgo downloading the package and just work with what we have here to fit the data:
+
+```{r fitting-parameters, exercise = TRUE, exercise.setup = "fit-sine-model"}
+# Make a range of b parameter values to try
+b_vals <- seq(0.1, 10, by = 0.01)
+
+# Use the Base R function 'sapply' to loop over b_vals list
+resids_sq <- sapply(b_vals, function(b) {
+    prediction <- 50*sin(2*pi/365*MoHick2019$jDay + b) + 50 # The function to loop b values over
+    residuals <- prediction - MoHick2019$Canopy.Cover.Midpt # Calculate the residuals, or error between the prediction & actual data
+    sum(residuals^2) # Calculate the sum of residuals squared
+})
+```
+
+To determine which curve fits best we want to find the minimum of the residual squares (the error term) vs the parameter we are trying to fit (the b value). Its easiest to let R calculate this for us. To do this we use the function `which` to ask which residual square value is the smallest and what is the b-value associated with it:
+
+```{r extracting-best-fit, exercise = TRUE, exercise.setup = "fitting-parameters"}
+best_fit <- which(resids_sq == min(resids_sq)) # Specify that the best fit is when the residual squares are smallest
+b_fit <- b_vals[best_fit] # Find and save the b value that is the best fit as b_fit
+b_fit #Let's check what the best fitting b value was
+```
+Now let's plot our best fitting sine curve against the original data to see how well it fits. We will use points for our original data and a smooth curve to show our fitted curve:
+
+```{r plotting-best-fit-curve, exercise = TRUE, exercise.setup = "extracting-best-fit"}
+ggplot(data = MoHick2019, aes(x = jDay, y = Canopy.Cover.Midpt)) +
+  geom_point() + 
+  geom_smooth(aes(x = jDay, y = 50*sin(2*pi/365*jDay + b_fit) +50))
+```
+Not bad but not great either. With no data from the summer, the model found a best fit for when the canopy cover would peak based on our spring and fall data alone. Still, notice though that the sine curve fits better than our GAM model because we used our knowledge of natural phenomenon to control our upper limit to no more than 100% canopy cover and pre-picked a curve that we knew more likely fit despite our missing data. This is one of the benefits of knowing various kinds of models - knowing a greater variety of patterns allows you to think of new and exciting ways to describe trends in your data - some of which can be incredibly insightful and better than just letting the computer do its thing!

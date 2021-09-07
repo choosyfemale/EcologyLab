@@ -1,0 +1,238 @@
+---
+title: "Tutorial"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(ggplot2)
+knitr::opts_chunk$set(echo = FALSE)
+areaCircle <- function(r){pi*r^2}
+tech_trees <- read.csv(url("https://raw.githubusercontent.com/naltmank/LearnR-with-Tech-Trees/main/TECH_all%20trees.csv"))
+tech_trees$TOTHT_m <- tech_trees$TOTHT_ft*0.305
+tech_trees$CanopyRadius_m <- tech_trees$CanopyRadius_ft*0.305
+tech_trees$CanopyArea <- areaCircle(tech_trees$CanopyRadius_m)
+active_trees <- tech_trees[tech_trees$TreeStatus != "Removed" , ]
+phenology <- read.csv(url("https://raw.githubusercontent.com/naltmank/LearnR-with-Tech-Trees/main/Tree%20Data%20Master%20Sheet_CLEAN%20v2.csv"), stringsAsFactors=T)
+phenology$Date <- as.Date(phenology$Date) # This formats the date as year-month-day or format = "%Y-%m-%d"
+
+phenology$jDate <- format(phenology$Date, "%Y-%j") 
+phenology$Year <- format(phenology$Date, "%Y") # Make a year column
+phenology$Month <- format(phenology$Date, "%m") # Make a month column
+phenology$jDay <- format(phenology$Date, "%j") # Make a jDay column
+phenology <- phenology[phenology$Year != "2020", ]
+MoHick <- subset(phenology, Common.Name == "Mockernut Hickory")
+```
+## Basic plotting
+
+Let's visualize some new relationships with a basic scatterplot. We'll going to use the active_trees dataset we worked with previously in Swirl to look at the relationship between tree height and canopy area area, so let's plot it out with plot()  
+
+(Please note that this LearnR module already has this dataset imported - if you're working in R you will need to import your data and create the active_trees dataset again - refer to the script you have saved from the previous Swirl module if needed for a refresher on those steps).  
+
+```{r basic-plotting, exercise = TRUE}
+
+plot(x = active_trees$TOTHT_m, y = active_trees$CanopyArea) 
+
+```
+
+As you can see, it's a roughly exponential relationship.This is somewhat expected - after all, height is measured linearly (m) and area is measured exponentially (m^2). Still, it's nice to view these things. However, this plot is ugly. This is a major downside of plotting in base R, which is fairly finicky and hard to look at. In the next section, we'll go over how to make pretty plots in R with the package ggplot2
+
+
+## Plotting with ggplot
+One of the most important steps in the scientific method is communicating your results. This relies heavily on the use of clean, easy-to-read graphs. As we saw above, base R struggles with making pretty graphs, so we're going to rely on a set of functions that we'll install as a "package." Packages are essentially external sets of functions that people have created to fill in some of the gaps in base R. There's an incredible amount of utility in packages, and they have highly specified roles ranging from complex modeling to simply making pretty graphs. We'll be focusing on the latter today.
+
+One of the most commonly used graphing packages in R is called ggplot. The syntax is a little different from what you might be used to, but with practice, it becomes easy to use.
+
+In this LearnR session, we've already downloaded and installed all the packages you'll need. However, here's a review for future use: First, install the package ggplot2 by running install.packages("ggplot2") in your console. The install.packages() function permanently installs the packages into your R, so this should be the only time you need to run this line of code (hence, why we're telling you to run this line of code in the console as opposed to in a script).
+
+Next, load the packages you're going to use. You need to load each package each time we need them, regardless of if you've used it before or not. Do this by running the library() command (see below). It's helpful to keep library() at the top of your script so 1) you know which packages you need in the future, and 2) other people know what packages they might need to install if they work with your script.
+
+Before we begin, it's worth noting that you can save ggplots to an object similar to any other variable. Saving your ggplots to an object is especially helpful if you are trying to save high resolution files of your figures. But for drafting a figure and making tweaks, it is often easier to first tweak your ggplots directly, as opposed to constantly re-running the object name each time you change one of the aesthetics.
+
+With that in mind, let's start going over the general syntax of ggplot. The first line of code you will run when you're creating a new ggplot will always be ggplot(). This tells R to create a set of axes to begin the plot. However, it will not populate that set of axes until you:
+
+1) feed it data in the form of a dataframe, 
+2) specify its *aes*thetics (or features, such as which columns in your dataframe will be your x axis, y axis, colors, etc.) and 
+3) which *geom*etry you are assigning your plot (think about this like the type of plot, e.g. point/scatter, bar graph, etc.). 
+
+You can continuously modify and add components to your ggplot simply by adding a + sign at the end of a line of code. R will treat all of your code as a single set of commands/a single graph until there are no more + signs. Let's practice by recreating the same plot we did earlier in ggplot:
+
+```{r plotting-in-ggplot, exercise = TRUE}
+library(ggplot2) # Load ggplot - not necessary in this LearnR, but keeping for your use
+# Generally speaking it's a good practice to keep all your libraries up at the top of your code
+# For now, we'll keep them in each chunk to make things easier to follow for each new function we use and for you to review later on down the line
+
+ggplot() + # Call ggplot
+  # Populate the graph with a scatter plot using active_trees, with x = TOTHT_m and y = CanopyArea
+  geom_point(data = active_trees, aes(x = TOTHT_m, y = CanopyArea)) 
+
+```
+
+Notice that we left the parentheses in ggplot() blank and filled out the parentheses in geom_point(). You could have theoretically also written the code as follows:
+
+```{r ggplot-reverse, exercise = TRUE}
+ggplot(data = active_trees, aes(x = TOTHT_m, y = CanopyArea))+
+  geom_point()
+
+```
+
+See? Generally, it is a good practice to specify the data and aesthetics alongside the geometry for which they are being used, as this helps keep things clear when you're working with multiple kinds of geometry (e.g. bar graph with error bars, scatterplot with trendline) and several different parts of a dataset in an analysis. 
+
+You can continue to add features and modify ggplots with additional command lines (using +) to customize your ggplots to your liking! While we won't go over all of these options, there are some incredible resources out there for ggplot that likely go over exactly what it is you're trying to do. As is often the case with R and coding, Google is your best friend, and it's best to familiarize yourself with the documentation of a function early and often using ? in the console. 
+
+With that said, here are some other ways we can modify the above plot:
+
+```{r scatter-customization, exercise = TRUE}
+ggplot() + # Call ggplot
+  geom_point(data = active_trees, aes(x = TOTHT_m, y = CanopyArea)) + # Populate the scatter plot
+  # Adding an exponential trendline with a formula of y = x^2 using geom_smooth
+  geom_smooth(data = active_trees, method="lm", formula = (y~poly(x,2) ), aes(x = TOTHT_m, y = CanopyArea)) +
+  scale_y_continuous(limits = c(0, 1200)) + # Sets the y axis limits
+  scale_x_continuous(limits = c(0, 65)) + # Sets the x axis limits
+  labs(title = "This is the main title", x = "Total Height (m)", y = bquote('Canopy Area ('*m^2*')')) + # Set the axis and graph labels and use the bquote() function to include an exponent in the label
+  theme(axis.title.x = element_text(size=20), # Increase the x axis label font size 
+        axis.title.y = element_text(size=20), # Increase the y axis label font size
+        axis.text.x = element_text(size=20), # Increase the x axis value font size 
+        axis.text.y = element_text(size=20), # Increase the y axis value font size
+        panel.background = element_blank(), # This line and the next line remove the gray background grid
+        plot.background = element_blank(), 
+        axis.line = element_line(colour = "black"), # Add in axis lines
+        legend.key.size = unit(1, "cm") # Increase the legend size
+        ) # Don't forget to close the theme expression
+
+```
+
+There's a lot of information in the above chunk of code, but hopefully this helps you see the flexibility and utility of ggplot! One thing that's important to remember about ggplot (and R in general) is that it will only graph EXACTLY what you tell it to graph. This leads to some unforeseen frustration when people discover they're not being precise enough in telling R what to do. For example, while this isn't an issue with a scatter plot, if you wanted to make a bar graph showing the average total height (±SE) and average canopy cover (±SE) of the trees on GT's campus, you would need to tell R exactly what those values are, either directly or through functions 'nested' (inside of) other functions. One way to do this is to create a new, separate dataframe with ONLY the data you need (i.e. columns for mean height, mean canopy area, SE height, SE canopy area). See if you can make that graph on your own below:
+
+```{r ggplot_bar_graph, exercise = TRUE}
+# make your new dataframe from active_trees with only the information you need
+# Review the previous Swirl lesson for tips on how to properly subset/manipulate dataframes
+
+
+
+
+
+# produce your ggplot (hint: start with ggplot() + and then use geom_bar())
+# Look up documentation/help as needed!
+
+
+
+
+```
+
+
+## Visualizing tree phenology with ggplot
+
+One of the great things about ggplot is that it is better at dealing with categorical data than base R is. This is useful if you're dealing with things like size classes (e.g. small, medium, large), canopy cover classes (0% cover, <5% cover, 5-24% cover, 25-49% cover, etc. ), etc. that need to be plotted on a y-axis. This is often the case when dealing with *phenology* data, where you frequently need to visualize changes in some factor over time; by grouping things like canopy cover into a broader categorical response variable, you can ensure consistency over long sampling periods and over large sampling groups, although with the loss of some resolution. This is especially important if you are dealing with large datasets over long periods of time, where there may be changes in the team of researchers collecting the data or, in our case, different classes of students each semester. Given that the timing of life history events of a wide variety of species is predicted to shift over time due to impacts of climate change, it is valuable to visualize these changes as best as we can so we can make sound predictions on what impacts these shifts may have (e.g. flowering may happen earlier due to the earlier onset of warm weather, which may impact insect/pollinator fitness).
+
+Here, we'll be working with phenology data collected by Georgia Tech students starting in 2017 in a dataset we'll call "phenology." Let's get some information on that dataset:
+
+```{r phenology-data-set-up, exercise = TRUE}
+
+str(phenology) # Check the structure of the data
+```
+
+Looking at Scientific and Common names, which each show 34 'levels', this indicates 34 unique names of trees found in the dataframe. You'll also notice that the "Date" column is recognized as a "Date" as opposed to a string or a factor. This is because we specifically specified for it to work this way. You can do this as follows:
+
+phenology$Date <- as.Date(phenology$Date)
+
+This formats the date as year-month-day or format = "%Y-%m-%d"
+
+If you wanted to switch to a different format of date, do something like:
+phenology$Date = as.Date(phenology$Date, format = "%Y/%m/%d")
+Alternatively, if you had phenology$Date in DD/MM/YYYY format, you could run 
+phenology$Date = as.Date(phenology$Date, format = "%d/%m/%Y") 
+Note: with as.Date() 'y' and 'Y" are not the same thing. 'y' is the 2 digit year and 'Y' is the 4 digit year.
+
+You'll also notice a column called "jDate." In time series data, we often use something called the "Julian Date," which is essentially just the number of days in a year instead of the month/day) This is often quite useful when examining patterns over time. For example, Sept. 30 to Oct. 1 are only a day apart, but traditional analyses would unfairly treat them like they are a month apart! To make a new column for the Julian dates, you could use the following line of code:
+
+phenology$jDate <- format(phenology$Date, "%Y-%j") # Specifies that we'll have the Year first, then the number of day in that year after
+
+We also made columns for just the Year, Month, of Julian Day (i.e. the number of day of the year, without specifying which year you're addressing). You can do this as follows:
+
+phenology$Year <- format(phenology$Date, "%Y") # Make a year column
+phenology$Month <- format(phenology$Date, "%m") # Make a month column
+phenology$jDay <- format(phenology$Date, "%j") # Make a jDay column
+
+In general, the specific columns you will need will vary depending on the kind of analysis you're running, and how you think trends change over time - are you looking to see how things change day to day? Month to month? If trends vary depending on the year? While more options can mean more flexibility, datasets can get quite bloated. So, it's good to know how to pick the columns you need and create new columns that suit your needs.
+
+Let's test out some plots with a specific tree. Let's go with Mockernut Hickory, because it sounds cool. Subset the data using the subset() function for this:
+
+```{r subsetting-data, exercise = TRUE}
+MoHick <- subset(phenology, Common.Name == "Mockernut Hickory")
+
+
+```
+
+The == up above is a conditional statement, meaning we want to get all the things that correspond to a certain condition (i.e. IF the Common name is this , THEN include it in our new dataset)
+
+What other ways could you subset this data? (e.g. by scientific name, tree code, etc.)
+
+
+Suppose we're interested in the timing of different phenological events, like leaf loss, over a year and we've got enough data to compare years against one another, that is, if things are different in different years. It would be helpful to visualize these trends over time, right? 
+
+One thing to note is that our data here is purely categorical, which base R struggles with. Luckily, ggplot can handle this quite well:
+
+```{r ugly-time-series, exercise = TRUE}
+ggplot() +
+  geom_point(data = MoHick, aes(jDate, Canopy.Cover)) 
+```
+
+Above, we called the function ggplot, specified the data we're using (in this case our MoHick data), then included what aesthetics (features) we want to plot. Here it's Julian date as the x axis, and canopy cover as y.
+
+We see that Canopy cover decreases and increases in cycles... but the cycles are hard to tell because there's too much data on the x-axis! Furthermore, the y axis isn't ordered properly. That's because we're using discrete categorical variables that are ordered "alphabetically"; <5% begins with a symbol, so R treats that as the first letter of the "alphabet."
+Let's clean this up and add some proper axes labels.
+
+```{r clean-plot, exercise = TRUE}
+ggplot() +  
+  # Only plot the Julian DAY this time, and tell R it's a number
+  geom_point(data = MoHick, aes(as.numeric(jDay), Canopy.Cover)) +  
+  scale_y_discrete(labels = c("0", "<5%", "25%-49%", "50%-74%", "75%-94%", "95% or More")) +  # Fix the order of the y-axis
+  # Make it so our x axis isn't too crowded or sparse
+  scale_x_continuous(breaks = seq(from = 000, to = 365, by = 30)) +  
+  labs(y= "Canopy Cover (%)",
+       x = "Julian Day") +  # Specify x and y axis labels
+  facet_grid(Year~.)  # Make it so we can have a grid of graphs, where each row is a different year
+
+# Feel free to continue modifying this graph with some of the modifiers we practiced earlier!
+```
+
+Much better! Not all seasons captured this because the semester/project ended, but there are some clear patterns!
+
+```{r understanding_trends, echo = FALSE}
+question("Based on this graph, we can see that (pick all that apply)...",
+  answer("Mockernut Hickory has its leaves all year round"),
+  answer("Mockernut Hickory doesn't get its leaves back until late fall"),
+  answer("Mockernut Hickory starts losing its leaves in the late fall/early winter", correct = TRUE),
+  answer("Mockernut Hickory starts getting its leaves back in late April/early May", correct = TRUE)
+)
+
+```
+
+
+
+Now that you have the general idea, try playing around with different visualizations. Try visualizing the timing of Colored.Leaves in Mockernut Hickory. What might you need to change, and what steps can you simply repeat? 
+
+```{r colored_leaves, exercise= TRUE}
+
+```
+
+What other variables could you look at? Other species? Think about how the life history of some tree species might affect these trends and how they might be affected by climate change. How could you visualize these impacts?
+
+```{r free-workspace, exercise = TRUE}
+# Use this space to play around with things
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
